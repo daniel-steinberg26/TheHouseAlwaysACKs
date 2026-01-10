@@ -16,16 +16,12 @@ import socket
 import signal
 from typing import Optional, Tuple
 
-from blackjack import Hand
+from blackjack import Hand, RESULT_LOSS, RESULT_NOT_OVER, RESULT_TIE, RESULT_WIN
 from common import (
     MAGIC_COOKIE,
     MSG_OFFER,
     MSG_REQUEST,
     MSG_PAYLOAD,
-    RESULT_NOT_OVER,
-    RESULT_TIE,
-    RESULT_LOSS,
-    RESULT_WIN,
     UDP_PORT_OFFERS,
     OFFER_STRUCT,
     REQUEST_STRUCT,
