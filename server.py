@@ -187,13 +187,8 @@ def play_one_round(
         if state == RESULT_WIN:
             # Dealer bust: state already printed with the bust card (avoid printing the same final state twice).
             return
-
     result = game.final_result()
     send_server_payload(conn, result, None)
-    _print_state_with_round(
-        round_idx, rounds_total, player_name, player_hand, dealer_hand, hide_dealer=False
-    )
-
 
 def handle_client(
     conn: socket.socket,
