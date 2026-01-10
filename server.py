@@ -223,6 +223,8 @@ def handle_client(
         print(f"[{peer}] Finished; closing")
 
     except (ConnectionError, OSError):
+        # Client may disconnect mid-round (e.g., Ctrl+C).
+        # If the server itself is not shutting down, report it.
         if not stop_evt.is_set():
             print(f"[{peer}] Client disconnected")
     finally:
@@ -255,6 +257,14 @@ def run_server(server_name: str = "The House Always ACKs", tcp_port: int = 0) ->
     # Track client threads so we can join them for a cleaner exit.
     threads_lock = threading.Lock()
     client_threads: set[threading.Thread] = set()
+    def _client_thread_entry(conn: socket.socket, addr: Tuple[str, int]) -> None:
+        try:
+            handle_client(conn, addr, stop_evt, sockets_set, sockets_lock, server_name)
+        finally:
+            # Ensure finished client threads don't linger in the tracking set.
+            with threads_lock:
+                client_threads.discard(threading.current_thread())
+
 
     def _shutdown(reason: str) -> None:
         # Ensure the shutdown message is printed exactly once.
@@ -313,8 +323,8 @@ def run_server(server_name: str = "The House Always ACKs", tcp_port: int = 0) ->
                 sockets_set.add(conn)
 
             th = threading.Thread(
-                target=handle_client,
-                args=(conn, addr, stop_evt, sockets_set, sockets_lock, server_name),
+                target=_client_thread_entry,
+                args=(conn, addr),
                 daemon=False,
             )
             with threads_lock:
