@@ -20,11 +20,6 @@ MSG_OFFER = 0x2
 MSG_REQUEST = 0x3
 MSG_PAYLOAD = 0x4
 
-RESULT_NOT_OVER = 0x0
-RESULT_TIE = 0x1
-RESULT_LOSS = 0x2
-RESULT_WIN = 0x3
-
 UDP_PORT_OFFERS = 13122
 OFFER_INTERVAL_SEC = 1.0
 
@@ -146,7 +141,6 @@ def format_state(player_hand: Hand, dealer_hand: Hand, hide_dealer: bool) -> str
         f"{_format_hand('Player', player_hand)}   (total: {p_total})\n"
         f"{_format_hand('Dealer', dealer_hand, hide_second=hide_dealer)}   (total: {d_total}{suffix})"
     )
-
 
 def print_game_state(player_name: Optional[str], player_hand: Hand, dealer_hand: Hand, hide_dealer: bool) -> None:
     # Server prints are wrapped with the player name; client prints are separated by === lines.
