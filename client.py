@@ -121,6 +121,8 @@ def listen_for_offer() -> Optional[Offer]:
                 print("Please enter a valid number.")
             except (EOFError, KeyboardInterrupt):
                 return None
+    except:
+        return None
     finally:
         try:
             udp.close()
