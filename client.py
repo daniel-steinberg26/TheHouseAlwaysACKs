@@ -14,18 +14,15 @@ import argparse
 
 import socket
 import signal
+import threading
 from typing import Optional, Tuple
 
-from blackjack import Hand
+from blackjack import Hand, RESULT_LOSS, RESULT_NOT_OVER, RESULT_TIE, RESULT_WIN
 from common import (
     MAGIC_COOKIE,
     MSG_OFFER,
     MSG_REQUEST,
     MSG_PAYLOAD,
-    RESULT_NOT_OVER,
-    RESULT_TIE,
-    RESULT_LOSS,
-    RESULT_WIN,
     UDP_PORT_OFFERS,
     OFFER_STRUCT,
     REQUEST_STRUCT,
@@ -40,12 +37,30 @@ from common import (
     card_from_wire,
 )
 _running = True
+_stop_evt = threading.Event()
+_shutdown_printed = False
+_active_tcp: Optional[socket.socket] = None
 
 
 def _sigint_handler(signum, frame):
-    global _running
+    """Handle Ctrl+C: print once, stop loops, and close active sockets to unblock recv()."""
+    global _running, _shutdown_printed, _active_tcp
     _running = False
-    print("\nClient shutting down...")
+    _stop_evt.set()
+    if not _shutdown_printed:
+        _shutdown_printed = True
+        print("Client shutting down...")
+    # Close active TCP socket (if any) to unblock recv_exact immediately.
+    if _active_tcp is not None:
+        try:
+            _active_tcp.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        try:
+            _active_tcp.close()
+        except OSError:
+            pass
+        _active_tcp = None
 
 
 signal.signal(signal.SIGINT, _sigint_handler)
@@ -132,7 +147,8 @@ def ask_decision() -> str:
         try:
             ans = input("Hit or Stand? ").strip().lower()
         except (EOFError, KeyboardInterrupt):
-            return "Stand"
+            # Ctrl+C should exit immediately; do not send anything to server.
+            return ""
 
         if ans in ("hit", "h"):
             return "Hittt"
@@ -143,7 +159,7 @@ def ask_decision() -> str:
 
 
 def recv_payload(tcp: socket.socket) -> Optional[Tuple[int, int, int]]:
-    raw = recv_exact(tcp, SERVER_PAYLOAD_STRUCT.size)
+    raw = recv_exact(tcp, SERVER_PAYLOAD_STRUCT.size, stop_event=_stop_evt)
     if not raw:
         return None
 
@@ -157,7 +173,9 @@ def recv_payload(tcp: socket.socket) -> Optional[Tuple[int, int, int]]:
 
 
 def play_session(offer: Offer, rounds: int, client_name: str) -> None:
+    global _active_tcp
     tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    _active_tcp = tcp
     try:
         tcp.settimeout(SOCKET_TIMEOUT_SEC)
         tcp.connect((offer.server_ip, offer.server_port))
@@ -195,6 +213,8 @@ def play_session(offer: Offer, rounds: int, client_name: str) -> None:
             # Player loop
             while _running:
                 decision = ask_decision()
+                if not _running or not decision:
+                    return
                 tcp.sendall(CLIENT_PAYLOAD_STRUCT.pack(MAGIC_COOKIE, MSG_PAYLOAD, decision.encode("utf-8")))
 
                 pkt = recv_payload(tcp)
@@ -258,6 +278,7 @@ def play_session(offer: Offer, rounds: int, client_name: str) -> None:
             tcp.close()
         except OSError:
             pass
+        _active_tcp = None
 
 
 def main():
