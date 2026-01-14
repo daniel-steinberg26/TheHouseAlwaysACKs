@@ -52,20 +52,24 @@ signal.signal(signal.SIGINT, _sigint_handler)
 
 
 def listen_for_offer() -> Optional[Offer]:
+    import time
     udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         udp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         udp.bind(("", UDP_PORT_OFFERS))
-        udp.settimeout(SOCKET_TIMEOUT_SEC)
+        udp.settimeout(0.5)
         print("Client started, listening for offer requests...")
 
-        while _running:
+        offers = {}
+        start = time.time()
+        DISCOVERY_TIME = 4  # seconds to listen for offers
+        while _running and (time.time() - start < DISCOVERY_TIME):
             try:
                 data, (ip, _) = udp.recvfrom(1024)
             except socket.timeout:
                 continue
             except OSError:
-                return None
+                break
 
             if len(data) < OFFER_STRUCT.size:
                 continue
@@ -75,10 +79,33 @@ def listen_for_offer() -> Optional[Offer]:
                 continue
 
             name = decode_name(name_raw)
-            print(f"Received offer from {ip} ({name})")
-            return Offer(server_ip=ip, server_port=int(tcp_port), server_name=name)
+            key = (ip, int(tcp_port))
+            if key not in offers:
+                offers[key] = Offer(server_ip=ip, server_port=int(tcp_port), server_name=name)
+                print(f"Discovered server: {ip}:{tcp_port} ({name})")
 
-        return None
+        if not offers:
+            print("No servers found.")
+            return None
+
+        print("\nAvailable servers:")
+        offer_list = list(offers.values())
+        for idx, offer in enumerate(offer_list, 1):
+            print(f"  {idx}. {offer.server_name} at {offer.server_ip}:{offer.server_port}")
+
+        while True:
+            try:
+                choice = input(f"Select server [1-{len(offer_list)}] or Enter to cancel: ").strip()
+                if not choice:
+                    return None
+                idx = int(choice)
+                if 1 <= idx <= len(offer_list):
+                    return offer_list[idx-1]
+                print("Invalid selection.")
+            except ValueError:
+                print("Please enter a valid number.")
+            except (EOFError, KeyboardInterrupt):
+                return None
     finally:
         try:
             udp.close()
@@ -238,18 +265,30 @@ def main():
     p.add_argument("--name", default="Team Joker")
     args = p.parse_args()
 
+    offer = None
     while _running:
+        if offer is None:
+            offer = listen_for_offer()
+            if not offer:
+                if _running:
+                    print("No offers received; retrying...")
+                continue
+
         rounds = ask_rounds()
         if rounds <= 0 or not _running:
             break
 
-        offer = listen_for_offer()
-        if not offer:
-            if _running:
-                print("No offers received; retrying...")
-            continue
-
         play_session(offer, rounds, args.name)
+
+        # After a session, ask if user wants to select a different server
+        try:
+            again = input("\nPlay again with the same server? (y = yes, n = choose new server, Enter = quit): ").strip().lower()
+            if again == "n":
+                offer = None
+            elif again == "":
+                break
+        except (EOFError, KeyboardInterrupt):
+            break
 
 
 if __name__ == "__main__":
